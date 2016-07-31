@@ -131,7 +131,7 @@ mod tests_string_reader {
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
-    Number(u32),
+    Number(String),
     Char(char),
     String(String),
     Word(String),
@@ -210,9 +210,9 @@ s"#;
             Token::Word("let".into()),
             Token::Word("a".into()),
             Token::Equal,
-            Token::Number(3),
+            Token::Number("3".into()),
             Token::Mult,
-            Token::Number(6),
+            Token::Number("6".into()),
             Token::Semicolon,
             Token::Char('b'),
             Token::String("asdf".into()),
@@ -220,7 +220,7 @@ s"#;
             Token::Comment,
             Token::Word("print".into()),
             Token::LeftDelimiter(Delimiter::Parenthesis),
-            Token::Number(13434),
+            Token::Number("13434".into()),
             Token::RightDelimiter(Delimiter::Parenthesis),
             Token::Comma,
             Token::Comment,
@@ -228,7 +228,7 @@ s"#;
             Token::Slash,
             Token::Word("dostuff".into()),
             Token::Comment,
-            Token::Number(3),
+            Token::Number("3".into()),
             Token::Word("s".into())
         );
         let mut reader: StringReader = StringReader::new(input);
@@ -274,7 +274,10 @@ pub fn global_token_matcher(c: char) -> TokenProvider {
 
 pub fn tokenize_single_quote(mut reader: &mut StringReader) -> TokenProviderFnResult {
     if let Some('\'') = reader.check_ahead(1) {
-        let result = try!(reader.advance().ok_or( Err("Illogic!".into()) ));
+        let result = match reader.advance() {
+            Some(c) => c,
+            None => return Err("Illogic!".into())
+        };
         reader.advance();
         Ok( Token::Char(result) )
     } else {
@@ -327,11 +330,11 @@ pub fn tokenize_ml_comment(mut reader: &mut StringReader) -> TokenProviderFnResu
 
 pub fn tokenize_number(mut reader: &mut StringReader) -> TokenProviderFnResult {
     let mut result = match reader.current() {
-        Some(c) => c.to_digit(10).unwrap(),
-        None => 0
+        Some(c) => c.to_string(),
+        None => return Err("Empty number".into())
     };
     while let Some(c @ '0' ... '9') = reader.check_ahead(0) {
-        result = result * 10 + c.to_digit(10).unwrap();
+        result.push(c);
         reader.advance();
     }
     Ok( Token::Number(result) )
@@ -344,7 +347,7 @@ mod tests_tokenize_number {
     #[test]
     fn when_number_string_returns_number_token() {
         let mut reader: StringReader = StringReader::new("232");
-        assert_eq!(tokenize_number(&mut reader).unwrap(), Token::Number(232))
+        assert_eq!(tokenize_number(&mut reader).unwrap(), Token::Number("232".into()))
     }
 }
 
