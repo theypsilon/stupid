@@ -274,7 +274,7 @@ pub fn global_token_matcher(c: char) -> TokenProvider {
 
 pub fn tokenize_single_quote(mut reader: &mut StringReader) -> TokenProviderFnResult {
     if let Some('\'') = reader.check_ahead(1) {
-        let result = reader.advance().unwrap();
+        let result = try!(reader.advance().ok_or( Err("Illogic!".into()) ));
         reader.advance();
         Ok( Token::Char(result) )
     } else {
