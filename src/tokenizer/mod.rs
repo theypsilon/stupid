@@ -349,9 +349,10 @@ mod tests_tokenize_number {
 }
 
 pub fn tokenize_word(mut reader: &mut StringReader) -> TokenProviderFnResult {
-    let mut result = reader.current()
-        .map(|c| c.to_string())
-        .unwrap_or(String::new());
+    let mut result = match reader.current() {
+        Some(c) => c.to_string(),
+        None => return Err("Empty word".into())
+    };
     while let Some(c @ 'a' ... 'z') = reader.check_ahead(0) {
         result.push(c);
         reader.advance();
