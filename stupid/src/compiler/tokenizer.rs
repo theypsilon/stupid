@@ -1,4 +1,8 @@
+use failure::Error;
 use std::str::Chars;
+use std::slice::Iter;
+
+use self::Token::Word;
 
 pub struct StringReader<'a> {
     current: Option<char>,
@@ -8,7 +12,7 @@ pub struct StringReader<'a> {
 }
 
 impl<'a> StringReader<'a> {
-    fn new(input: &'a str) -> StringReader {
+    pub fn new(input: &'a str) -> StringReader {
         let mut iter = input.chars();
         let current = iter.next();
         StringReader {
@@ -33,6 +37,7 @@ impl<'a> StringReader<'a> {
         self.current()
     }
 
+    #[allow(dead_code)]
     fn rewind(&mut self) -> Option<()> {
         if self.position == 0 { return None }
         self.position = self.position - 1;
@@ -168,9 +173,9 @@ pub enum TokenProvider {
     Func(TokenProviderFn)
 }
 pub type TokenProviderFn = fn(&mut StringReader) -> TokenProviderFnResult;
-pub type TokenProviderFnResult = Result<Token, String>;
+pub type TokenProviderFnResult = Result<Token, Error>;
 
-pub fn tokenize(mut reader: &mut StringReader, matcher: TokenMatcher) -> Result<Vec<Token>, String> {
+pub fn tokenize(mut reader: &mut StringReader, matcher: TokenMatcher) -> Result<Vec<Token>, Error> {
     let mut tokens: Vec<Token> = Vec::new();
     while let Some(c) = reader.current() {
         let consumer = matcher(c);
@@ -237,12 +242,6 @@ s"#;
     }
 }
 
-pub fn compile(input: &str) -> Result<String, String> {
-    let mut reader: StringReader = StringReader::new(input);
-    let tokens = try!(tokenize(&mut reader, global_token_matcher));
-    Ok(format!("Tokens: {:?}", tokens))
-}
-
 pub fn global_token_matcher(c: char) -> TokenProvider {
     match c {
         '=' => TokenProvider::Func(tokenize_equal),
@@ -272,20 +271,20 @@ pub fn global_token_matcher(c: char) -> TokenProvider {
     }
 }
 
-pub fn tokenize_single_quote(mut reader: &mut StringReader) -> TokenProviderFnResult {
+pub fn tokenize_single_quote(reader: &mut StringReader) -> TokenProviderFnResult {
     if let Some('\'') = reader.check_ahead(1) {
         let result = match reader.advance() {
             Some(c) => c,
-            None => return Err("Illogic!".into())
+            None => return Err(format_err!("Illogic!"))
         };
         reader.advance();
         Ok( Token::Char(result) )
     } else {
-        Err("Single quotes are for chars only".into())
+        Err(format_err!("Single quotes are for chars only"))
     }
 }
 
-pub fn tokenize_double_quote(mut reader: &mut StringReader) -> TokenProviderFnResult {
+pub fn tokenize_double_quote(reader: &mut StringReader) -> TokenProviderFnResult {
     let mut result = String::new();
     while let Some(x) = reader.check_ahead(0) {
         reader.advance();
@@ -295,7 +294,7 @@ pub fn tokenize_double_quote(mut reader: &mut StringReader) -> TokenProviderFnRe
     Ok( Token::String(result) )
 }
 
-pub fn tokenize_equal(mut reader: &mut StringReader) -> TokenProviderFnResult {
+pub fn tokenize_equal(reader: &mut StringReader) -> TokenProviderFnResult {
     if let Some('=') = reader.check_ahead(0) {
         reader.advance();
         Ok( Token::DoubleEqual )
@@ -312,14 +311,14 @@ pub fn tokenize_slash(mut reader: &mut StringReader) -> TokenProviderFnResult {
     }
 }
 
-pub fn tokenize_eol_comment(mut reader: &mut StringReader) -> TokenProviderFnResult {
+pub fn tokenize_eol_comment(reader: &mut StringReader) -> TokenProviderFnResult {
     while let Some(c) = reader.advance() {
         if c == '\n' {break}
     }
     Ok( Token::Comment )
 }
 
-pub fn tokenize_ml_comment(mut reader: &mut StringReader) -> TokenProviderFnResult {
+pub fn tokenize_ml_comment(reader: &mut StringReader) -> TokenProviderFnResult {
     let mut asterisk = false;
     while let Some(c) = reader.advance() {
         if asterisk && c == '/' {break}
@@ -328,10 +327,10 @@ pub fn tokenize_ml_comment(mut reader: &mut StringReader) -> TokenProviderFnResu
     Ok( Token::Comment )
 }
 
-pub fn tokenize_number(mut reader: &mut StringReader) -> TokenProviderFnResult {
+pub fn tokenize_number(reader: &mut StringReader) -> TokenProviderFnResult {
     let mut result = match reader.current() {
         Some(c) => c.to_string(),
-        None => return Err("Empty number".into())
+        None => return Err(format_err!("Empty number"))
     };
     while let Some(c @ '0' ... '9') = reader.check_ahead(0) {
         result.push(c);
@@ -351,10 +350,10 @@ mod tests_tokenize_number {
     }
 }
 
-pub fn tokenize_word(mut reader: &mut StringReader) -> TokenProviderFnResult {
+pub fn tokenize_word(reader: &mut StringReader) -> TokenProviderFnResult {
     let mut result = match reader.current() {
         Some(c) => c.to_string(),
-        None => return Err("Empty word".into())
+        None => return Err(format_err!("Empty word"))
     };
     while let Some(c @ 'a' ... 'z') = reader.check_ahead(0) {
         result.push(c);
@@ -373,4 +372,161 @@ mod tests_tokenize_word {
         let mut reader: StringReader = StringReader::new("asdf");
         assert_eq!(tokenize_word(&mut reader).unwrap(), Token::Word("asdf".into()))
     }
+}
+
+
+pub struct Reader<'a, T: 'a> {
+    current: Option<&'a T>,
+    position: usize,
+    iter: Iter<'a, T>,
+    input: &'a Vec<T>
+}
+
+impl<'a, T> Reader<'a, T> {
+    fn new(input: &'a Vec<T>) -> Reader<T> {
+        let mut iter = input.iter();
+        let current = iter.next();
+        Reader {
+            input: input,
+            iter: iter,
+            position: 0,
+            current: current
+        }
+    }
+
+    fn current(&self) -> Option<&'a T> {
+        self.current
+    }
+
+    fn check_ahead(&self, offset: usize) -> Option<&'a T> {
+        self.iter.clone().nth(offset)
+    }
+
+    fn advance(&mut self) -> Option<&'a T> {
+        self.position = self.position + 1;
+        self.current = self.iter.next();
+        self.current()
+    }
+
+    #[allow(dead_code)]
+    fn rewind(&mut self) -> Option<()> {
+        if self.position == 0 { return None }
+        self.position = self.position - 1;
+        self.iter = self.input.iter();
+        self.current = self.iter.nth(self.position);
+        Some( () )
+    }
+}
+
+pub enum AST {
+    Fn(Fn),
+    Sentence(Sentence)
+}
+
+pub struct Decl {
+    kind: String,
+    name: String
+}
+
+pub struct Fn {
+    name: String,
+    params: Vec<Decl>,
+    return_kind: String,
+    sentences: Vec<AST>
+}
+
+pub struct Sentence {
+    decl: Decl,
+    expr: Expr
+}
+
+pub enum Expr {
+    Ident(String),
+    Literal(String),
+    Op(Op)
+}
+
+pub struct Op {
+    name: String,
+    params: Vec<Expr>
+}
+
+pub fn parse(input: &Vec<Token>) -> Result<String, Error> {
+    let mut reader = Reader::new(input);
+    let mut tree: Vec<AST> = Vec::new();
+    while let Some(token) = reader.current() {
+        match token {
+            &Token::Word(ref w) => {
+                match w.as_ref() {
+                    "fn" => {
+                        try!(parse_fn(&mut tree, &mut reader));
+                    }
+                    _ => {
+                        return Err(format_err!("cant define whatever in global scope"))
+                    }
+                }
+            },
+            _ => {
+                return Err(format_err!("awaiting fn declaration"))
+            }
+        }
+        reader.advance();
+    }
+    Ok("something".into())
+}
+
+fn parse_fn(tree: &mut Vec<AST>, reader: &mut Reader<Token>) -> Result<(), Error> {
+    reader.advance();
+    if let Some(&Word(ref name)) = reader.current() {
+        let func = Fn {
+            name: name.clone(),
+            params: Vec::new(),
+            return_kind: "void".into(),
+            sentences: Vec::new()
+        };
+        reader.advance();
+        match reader.current() {
+            Some(&Token::LeftDelimiter(Delimiter::Parenthesis)) => {
+                reader.advance();
+            }
+            _ => {
+                return Err(format_err!("Expecting ("));
+            }
+        }
+
+        match reader.current() {
+            Some(&Token::RightDelimiter(Delimiter::Parenthesis)) => {
+                reader.advance();
+            }
+            Some(&Token::Word(ref w)) => {
+                return Err(format_err!("Uninmplemented!"));
+            }
+            _ => {
+                return Err(format_err!("Expecting parameters"));
+            }
+        }
+
+        match reader.current() {
+            Some(&Token::LeftDelimiter(Delimiter::Brace)) => {
+                reader.advance();
+            }
+            _ => {
+                return Err(format_err!("Expecting body"));
+            }
+        }
+
+        match reader.current() {
+            Some(&Token::RightDelimiter(Delimiter::Brace)) => {
+                reader.advance();
+            }
+            _ => {
+                return Err(format_err!("Expecting end of body"));
+            }
+        }
+
+        tree.push(AST::Fn(func))
+    } else {
+        reader.rewind();
+    }
+    Ok(())
 }
