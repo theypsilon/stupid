@@ -1,6 +1,6 @@
 extern crate stupid;
 
-use stupid::compiler::compile;
+use stupid::compiler::runner::compile;
 
 fn main() {
     let input = r#"s
@@ -12,7 +12,7 @@ s"#;
             println!("{}", s)
         },
         Err(e) => {
-            println!("ERROR!\n{}\n{}", e.cause(), e.backtrace());
+            println!("ERROR!\n{}\n{}", e, e.backtrace());
             std::process::exit(1)
         }
     }
